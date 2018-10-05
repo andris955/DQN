@@ -152,12 +152,12 @@ def optimize(myenv, policy_net, target_net, optimizer):
     #non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device=device, dtype=torch.uint8)
     non_final_next_states = torch.tensor([s for s in batch.next_state if s is not None], device=device, dtype=torch.float).to(device)
     state_batch = torch.tensor(batch.state, device=device, dtype=torch.float).to(device)
-    action_batch = torch.tensor(batch.action).to(device)
+    action_batch = torch.tensor(batch.action).to(device).unsqueeze(1)
     reward_batch = torch.tensor(batch.reward).to(device)
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
-    state_action_values = policy_net(state_batch)
+    state_action_values = policy_net(state_batch).gather(1, action_batch)
 
     # Compute V(s_{t+1}) for all next states.
     next_state = target_net(non_final_next_states).max(1)
@@ -165,14 +165,15 @@ def optimize(myenv, policy_net, target_net, optimizer):
     next_state_indexes = next_state[1].detach()
 
     # Compute the expected Q values
-    expected_state_action_values_1d = (next_state_values * GAMMA) + reward_batch
-    expected_state_action_values_4d = torch.zeros(state_action_values.size())
-    for i in range(len(next_state_indexes)):
-        expected_state_action_values_4d[i][next_state_indexes[i]] = expected_state_action_values_1d[i]
+    expected_state_action_values = (next_state_values * GAMMA) + reward_batch
+    expected_state_action_values = expected_state_action_values.unsqueeze(1)
+    #expected_state_action_values_4d = torch.zeros(state_action_values.size())
+    #for i in range(len(next_state_indexes)):
+     #   expected_state_action_values_4d[i][next_state_indexes[i]] = expected_state_action_values_1d[i]
 
 
     # Compute Huber loss
-    loss = F.smooth_l1_loss(state_action_values, expected_state_action_values_4d)
+    loss = F.smooth_l1_loss(state_action_values, expected_state_action_values)
 
     # Optimize the model
     optimizer.zero_grad()
