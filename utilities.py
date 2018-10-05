@@ -19,7 +19,7 @@ def create_folder():
     return new_folder_path
 
 class save():
-    def __init___(self):
+    def __init__(self):
         self.i_episodes_l = []
         self.action_steps_l = []
         self.score_l = []
@@ -35,6 +35,8 @@ class save():
             outfile = open(path + '\log.txt', 'w')
             for i in range(len(self.score_l)):
                 outfile.write('\t' + self.i_episodes_l[i] + '\t' + self.action_steps_l[i] + '\t' + self.score_l[i] + '\n')
+        return
+
 
 def save_hyperparams(batch_size,replay_start_size,eps_start,eps_end,eps_decay,m,target_update,gamma,capacity,k):
     path = create_folder()
@@ -42,6 +44,7 @@ def save_hyperparams(batch_size,replay_start_size,eps_start,eps_end,eps_decay,m,
     outfile.write('Batch size: ' + batch_size + '\n' + 'Replay Start Size: ' + replay_start_size + '\n' + 'Eps start: ' + eps_start + '\n'
                   + 'Eps end: ' + eps_end + '\n' + 'Eps decay: ' + eps_decay + '\n' + 'M: ' + m + '\n' + 'Target update: ' + target_update + '\n'
                   + 'Gamma: ' + gamma + '\n' + 'Capacity: ' + capacity + '\n' + 'Frame skipping: ' + k + '\n')
+    return
 
 def save_model_params(model):
     PATH = create_folder()

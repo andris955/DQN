@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 import utilities as u
 
-btrain = False
+btrain = True
 show_render = True
 img_show_bool = False
 
@@ -28,14 +28,13 @@ REPLAY_START_SIZE = 5000
 EPS_START = 0.99
 EPS_END = 0.05
 EPS_DECAY = 200
-M = 100
+M = 100000
 TARGET_UPDATE = 1000
 GAMMA = 0.99
 CAPACITY = 1000000
 K = 4
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-s = u.save()
 
 Experience = namedtuple('Experience',
                         ('state', 'next_state', 'action', 'reward', 'done'))
@@ -125,7 +124,10 @@ class Myenv():
             pass
 
     def epsz_greedy(self, policy_net):
-        eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.steps_done / EPS_DECAY)
+        if self.steps_done > REPLAY_START_SIZE:
+            eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * ((self.steps_done-REPLAY_START_SIZE) / EPS_DECAY))
+        else:
+            eps_threshold = 0.9
         self.steps_done += 1
         rand_num = np.random.random()
         if rand_num < eps_threshold:
@@ -155,11 +157,9 @@ def optimize(myenv, policy_net, target_net, optimizer):
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
-    state_action_values = policy_net(state_batch)#.gather(1, action_batch)
+    state_action_values = policy_net(state_batch)
 
     # Compute V(s_{t+1}) for all next states.
-    #next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    #next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
     next_state = target_net(non_final_next_states).max(1)
     next_state_values = next_state[0].detach()
     next_state_indexes = next_state[1].detach()
@@ -184,6 +184,7 @@ def optimize(myenv, policy_net, target_net, optimizer):
 
 
 def train(myenv, policy_net, target_net, optimizer):
+    s = u.save()
     for i_episode in range(M):
         myenv.get_initial_state()
         done = False
