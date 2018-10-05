@@ -13,22 +13,29 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+import utilities as u
 
-btrain = True
+btrain = False
 show_render = True
 img_show_bool = False
 
 game = 'Breakout-v0'
 
+PATH = "" #Path to NN parameters
+
 BATCH_SIZE = 128
-EPS_START = 0.9
+REPLAY_START_SIZE = 5000
+EPS_START = 0.99
 EPS_END = 0.05
 EPS_DECAY = 200
 M = 100
-TARGET_UPDATE = 10
-GAMMA = 0.999
+TARGET_UPDATE = 1000
+GAMMA = 0.99
+CAPACITY = 1000000
+K = 4
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+s = u.save()
 
 Experience = namedtuple('Experience',
                         ('state', 'next_state', 'action', 'reward', 'done'))
@@ -65,6 +72,7 @@ class Myenv():
         self.exp_buffer_capacity = capacity
         self.i = 0
         self.steps_done = 0
+        self.score = 0
 
     def preprocess(self, observation):
         screen = resize(rgb2gray(observation), (110, 84))[16:110 - 10, :]
@@ -73,6 +81,7 @@ class Myenv():
 
     def get_initial_state(self):
         self.state_buffer = []
+        self.score = 0
         observation = self.env.reset()
         x_t = self.preprocess(observation)
         for i in range(self.state_size):
@@ -81,11 +90,13 @@ class Myenv():
         return s_t
 
 
-    def game_step(self, action):
+    def game_step(self, action, k):
         if show_render:
             self.env.render()
 
-        observation, reward, done, info = self.env.step(action)
+        for i in range(k):
+            observation, reward, done, info = self.env.step(action)
+            self.score += reward
 
         x_t1 = self.preprocess(observation)
 
@@ -98,7 +109,8 @@ class Myenv():
         self.state_buffer.pop(0)
         self.state_buffer.append(x_t1)
         s_t1 = self.state_buffer
-        self.push_experience(s_t, s_t1, action, reward, done)
+        if btrain is True:
+            self.push_experience(s_t, s_t1, action, reward, done)
 
         if img_show_bool:
             self.i += 1
@@ -128,7 +140,7 @@ class Myenv():
 
 def optimize(myenv, policy_net, target_net, optimizer):
 
-    if len(myenv.exp_buffer) < BATCH_SIZE:
+    if len(myenv.exp_buffer) < REPLAY_START_SIZE:
         return
 
     experiences = myenv.sample(BATCH_SIZE)
@@ -175,32 +187,48 @@ def train(myenv, policy_net, target_net, optimizer):
     for i_episode in range(M):
         myenv.get_initial_state()
         done = False
+        action_steps = 0
         while done is not True:
             action = myenv.epsz_greedy(policy_net)
-            done = myenv.game_step(action)
+            done = myenv.game_step(action, K)
             optimize(myenv, policy_net, target_net, optimizer)
+            action_steps += 1
+        s.save_log(i_episode, action_steps, myenv.score, False)
         if i_episode % TARGET_UPDATE == 0: # befagyasztott háló frissítése
             target_net.load_state_dict(policy_net.state_dict())
-    print("Training complete")
+    s.save_log(i_episode, action_steps, myenv.score, True)
+    u.save_model_params(policy_net)
+    u.save_hyperparams(BATCH_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
+    print("Training completed")
+
+def eval(myenv, policy_net):
+    myenv.get_initial_state()
+    done = False
+    policy_net.load_state_dict(torch.load(PATH))
+    while done is not True:
+        with torch.no_grad():
+            action = policy_net(torch.from_numpy(np.array([myenv.state_buffer], dtype=np.float32))).max(1)[1].view(1, 1)
+        print(action)
+        done = myenv.game_step(action, K)
+    print(myenv.score)
 
 
 def main():
-    capacity = 10000
-
     env = gym.make(game).unwrapped
-    myenv = Myenv(env, 4, capacity)
+    num_actions = env.action_space.n
+    myenv = Myenv(env, num_actions, CAPACITY)
 
     policy_net = DQN(myenv.possible_actions).to(device)
     target_net = DQN(myenv.possible_actions).to(device)
     target_net.load_state_dict(policy_net.state_dict())
-    target_net.eval() #?
+    target_net.eval()
 
     optimizer = optim.RMSprop(policy_net.parameters())
 
-    if btrain:
+    if btrain is True:
         train(myenv, policy_net, target_net, optimizer)
     else:
-        pass
+        eval(myenv, policy_net)
 
 
 main()
