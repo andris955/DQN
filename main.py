@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import utilities as u
 
 btrain = True
-show_render = True
+show_render = False
 img_show_bool = False
 
 game = 'Breakout-v0'
@@ -27,7 +27,7 @@ BATCH_SIZE = 128
 REPLAY_START_SIZE = 5000
 EPS_START = 0.99
 EPS_END = 0.05
-EPS_DECAY = 200
+EPS_DECAY = 20000
 M = 100000
 TARGET_UPDATE = 1000
 GAMMA = 0.99
@@ -123,7 +123,7 @@ class Myenv():
         else:
             pass
 
-    def epsz_greedy(self, policy_net):
+    def eps_greedy(self, policy_net):
         if self.steps_done > REPLAY_START_SIZE:
             eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * ((self.steps_done-REPLAY_START_SIZE) / EPS_DECAY))
         else:
@@ -191,14 +191,13 @@ def train(myenv, policy_net, target_net, optimizer):
         done = False
         action_steps = 0
         while done is not True:
-            action = myenv.epsz_greedy(policy_net)
+            action = myenv.eps_greedy(policy_net)
             done = myenv.game_step(action, K)
             optimize(myenv, policy_net, target_net, optimizer)
             action_steps += 1
-        s.save_log(i_episode, action_steps, myenv.score, False)
-        if i_episode % TARGET_UPDATE == 0: # befagyasztott háló frissítése
+        s.save_log(i_episode, action_steps, myenv.score)
+        if i_episode % TARGET_UPDATE == 0:  # befagyasztott háló frissítése
             target_net.load_state_dict(policy_net.state_dict())
-    s.save_log(i_episode, action_steps, myenv.score, True)
     u.save_model_params(policy_net)
     u.save_hyperparams(BATCH_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
     print("Training completed")
@@ -233,4 +232,5 @@ def main():
         eval(myenv, policy_net)
 
 
-main()
+if __name__ == '__main__':
+    main()
