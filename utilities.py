@@ -19,10 +19,10 @@ def create_folder():
     return new_folder_path
 
 
-def save_log(i_episode, action_steps, score):
+def save_log(i_steps, score):
     path = create_folder()
     with open(path + '\log.txt', 'a') as outfile:
-        outfile.write('\t' + i_episode + '\t' + action_steps + '\t' + score + '\n')
+        outfile.write('\t' + i_steps + '\t' + score + '\n')
     return
 
 

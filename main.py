@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import utilities as u
 
 btrain = True
-show_render = False
+show_render = True
 img_show_bool = False
 
 game = 'Breakout-v0'
@@ -28,7 +28,7 @@ REPLAY_START_SIZE = 5000
 EPS_START = 0.99
 EPS_END = 0.05
 EPS_DECAY = 20000
-M = 100000
+M = 1500000
 TARGET_UPDATE = 1000
 GAMMA = 0.99
 CAPACITY = 1000000
@@ -114,7 +114,7 @@ class Myenv():
         if img_show_bool:
             self.i += 1
 
-        return done
+        return done, reward
 
     def push_experience(self, s_t, s_t1, action, reward, done):
         if(len(self.exp_buffer)) < self.exp_buffer_capacity:
@@ -185,18 +185,20 @@ def optimize(myenv, policy_net, target_net, optimizer):
 
 
 def train(myenv, policy_net, target_net, optimizer):
-    s = u.save()
-    for i_episode in range(M):
+    i_steps = 0
+    max_score = 0
+    temp_score = 0
+    while i_steps < M:
         myenv.get_initial_state()
         done = False
-        action_steps = 0
         while done is not True:
             action = myenv.eps_greedy(policy_net)
-            done = myenv.game_step(action, K)
+            done, reward = myenv.game_step(action, K)
             optimize(myenv, policy_net, target_net, optimizer)
-            action_steps += 1
-        s.save_log(i_episode, action_steps, myenv.score)
-        if i_episode % TARGET_UPDATE == 0:  # befagyasztott háló frissítése
+            temp_score += reward
+            i_steps += 1
+        if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
+            u.save_log(i_steps, myenv.score)
             target_net.load_state_dict(policy_net.state_dict())
     u.save_model_params(policy_net)
     u.save_hyperparams(BATCH_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
@@ -210,7 +212,7 @@ def eval(myenv, policy_net):
         with torch.no_grad():
             action = policy_net(torch.from_numpy(np.array([myenv.state_buffer], dtype=np.float32))).max(1)[1].view(1, 1)
         print(action)
-        done = myenv.game_step(action, K)
+        done, reward = myenv.game_step(action, K)
     print(myenv.score)
 
 
