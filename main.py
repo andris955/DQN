@@ -186,8 +186,6 @@ def optimize(myenv, policy_net, target_net, optimizer):
 
 def train(myenv, policy_net, target_net, optimizer):
     i_steps = 0
-    max_score = 0
-    temp_score = 0
     while i_steps < M:
         myenv.get_initial_state()
         done = False
@@ -195,7 +193,6 @@ def train(myenv, policy_net, target_net, optimizer):
             action = myenv.eps_greedy(policy_net)
             done, reward = myenv.game_step(action, K)
             optimize(myenv, policy_net, target_net, optimizer)
-            temp_score += reward
             i_steps += 1
         if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
             u.save_log(i_steps, myenv.score)
