@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import utilities as u
 
 btrain = True
-show_render = True
+show_render = False
 img_show_bool = False
 
 game = 'Breakout-v0'
@@ -114,7 +114,7 @@ class Myenv():
         if img_show_bool:
             self.i += 1
 
-        return done, reward
+        return done
 
     def push_experience(self, s_t, s_t1, action, reward, done):
         if(len(self.exp_buffer)) < self.exp_buffer_capacity:
@@ -191,10 +191,12 @@ def train(myenv, policy_net, target_net, optimizer):
         done = False
         while done is not True:
             action = myenv.eps_greedy(policy_net)
-            done, reward = myenv.game_step(action, K)
+            done = myenv.game_step(action, K)
             optimize(myenv, policy_net, target_net, optimizer)
             i_steps += 1
-        if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
+        if i_steps >5000:
+            print(i_steps)
+        if i_steps % TARGET_UPDATE < 50:  # befagyasztott háló frissítése és logolás
             u.save_log(i_steps, myenv.score)
             target_net.load_state_dict(policy_net.state_dict())
     u.save_model_params(policy_net)
@@ -209,7 +211,7 @@ def eval(myenv, policy_net):
         with torch.no_grad():
             action = policy_net(torch.from_numpy(np.array([myenv.state_buffer], dtype=np.float32))).max(1)[1].view(1, 1)
         print(action)
-        done, reward = myenv.game_step(action, K)
+        done = myenv.game_step(action, K)
     print(myenv.score)
 
 
