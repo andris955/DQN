@@ -24,12 +24,12 @@ game = 'Breakout-v0'
 PATH = "" #Path to NN parameters
 
 BATCH_SIZE = 128
-REPLAY_START_SIZE = 5000
+REPLAY_START_SIZE = 50000
 EPS_START = 0.99
 EPS_END = 0.05
 EPS_DECAY = 200000
 M = 1500000
-TARGET_UPDATE = 1000
+TARGET_UPDATE = 10000
 GAMMA = 0.99
 CAPACITY = 1000000
 K = 4
@@ -220,7 +220,7 @@ def main():
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
-    optimizer = optim.RMSprop(policy_net.parameters())
+    optimizer = optim.RMSprop(policy_net.parameters(), lr=0.00025)
 
     if btrain is True:
         train(myenv, policy_net, target_net, optimizer)
