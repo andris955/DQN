@@ -27,7 +27,7 @@ BATCH_SIZE = 128
 REPLAY_START_SIZE = 5000
 EPS_START = 0.99
 EPS_END = 0.05
-EPS_DECAY = 20000
+EPS_DECAY = 200000
 M = 1500000
 TARGET_UPDATE = 1000
 GAMMA = 0.99
@@ -134,7 +134,7 @@ class Myenv():
             action = np.random.randint(0, self.possible_actions)
         else:
              with torch.no_grad():
-                action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32))).max(1)[1].view(1,1)
+                action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32).to(device)).to(device)).max(1)[1].view(1,1)
         return action
 
     def sample(self, batch_size):
@@ -149,7 +149,6 @@ def optimize(myenv, policy_net, target_net, optimizer):
     batch = Experience(*zip(*experiences))
 
      # Compute a mask of non-final states and concatenate the batch elements
-    #non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device=device, dtype=torch.uint8)
     non_final_next_states = torch.tensor([s for s in batch.next_state if s is not None], device=device, dtype=torch.float).to(device)
     state_batch = torch.tensor(batch.state, device=device, dtype=torch.float).to(device)
     action_batch = torch.tensor(batch.action).to(device).unsqueeze(1)
@@ -167,10 +166,6 @@ def optimize(myenv, policy_net, target_net, optimizer):
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
     expected_state_action_values = expected_state_action_values.unsqueeze(1)
-    #expected_state_action_values_4d = torch.zeros(state_action_values.size())
-    #for i in range(len(next_state_indexes)):
-     #   expected_state_action_values_4d[i][next_state_indexes[i]] = expected_state_action_values_1d[i]
-
 
     # Compute Huber loss
     loss = F.smooth_l1_loss(state_action_values, expected_state_action_values)
