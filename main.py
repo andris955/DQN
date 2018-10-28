@@ -7,6 +7,7 @@ import math
 import random
 from collections import namedtuple
 from matplotlib import pyplot as plt
+import time
 
 import torch
 import torch.nn as nn
@@ -23,12 +24,12 @@ game = 'Breakout-v0'
 
 PATH = "" #Path to NN parameters
 
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 REPLAY_START_SIZE = 50000
-EPS_START = 0.99
-EPS_END = 0.05
+EPS_START = 1
+EPS_END = 0.1
 EPS_DECAY = 200000
-M = 1500000
+M = 1000000
 TARGET_UPDATE = 10000
 GAMMA = 0.99
 CAPACITY = 1000000
@@ -90,6 +91,7 @@ class Myenv():
 
 
     def game_step(self, action, k):
+        start_time = time.time()
         if show_render:
             self.env.render()
 
@@ -114,27 +116,32 @@ class Myenv():
         if img_show_bool:
             self.i += 1
 
+        if self.steps_done > REPLAY_START_SIZE:
+            print("Game step: %s" % (time.time() - start_time))
+
         return done
 
     def push_experience(self, s_t, s_t1, action, reward, done):
+        exp = [s_t, s_t1, action, reward, done]
         if(len(self.exp_buffer)) < self.exp_buffer_capacity:
-            exp = [s_t, s_t1, action, reward, done]
             self.exp_buffer.append(exp)
         else:
-            pass
+            self.exp_buffer.pop(0)
+            self.exp_buffer.append(exp)
+
 
     def eps_greedy(self, policy_net):
         if self.steps_done > REPLAY_START_SIZE:
             eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * ((self.steps_done-REPLAY_START_SIZE) / EPS_DECAY))
         else:
-            eps_threshold = 0.9
+            eps_threshold = 1
         self.steps_done += 1
         rand_num = np.random.random()
         if rand_num < eps_threshold:
             action = np.random.randint(0, self.possible_actions)
         else:
              with torch.no_grad():
-                action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32).to(device)).to(device)).max(1)[1].view(1,1)
+                action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32)).to(device)).max(1)[1].view(1, 1)
         return action
 
     def sample(self, batch_size):
@@ -145,12 +152,13 @@ def optimize(myenv, policy_net, target_net, optimizer):
     if len(myenv.exp_buffer) < REPLAY_START_SIZE:
         return
 
+    start_time = time.time()
     experiences = myenv.sample(BATCH_SIZE)
     batch = Experience(*zip(*experiences))
 
      # Compute a mask of non-final states and concatenate the batch elements
-    non_final_next_states = torch.tensor([s for s in batch.next_state if s is not None], device=device, dtype=torch.float).to(device)
-    state_batch = torch.tensor(batch.state, device=device, dtype=torch.float).to(device)
+    non_final_next_states = torch.tensor(np.array([s for s in batch.next_state if s is not None], dtype=np.float32), device=device, dtype=torch.float).to(device)
+    state_batch = torch.tensor(np.array(batch.state, dtype=np.float32), device=device, dtype=torch.float32).to(device)
     action_batch = torch.tensor(batch.action).to(device).unsqueeze(1)
     reward_batch = torch.tensor(batch.reward).to(device)
 
@@ -176,26 +184,27 @@ def optimize(myenv, policy_net, target_net, optimizer):
     for param in policy_net.parameters():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
-
+    print("Optimalization: %s" % (time.time() - start_time))
 
 
 def train(myenv, policy_net, target_net, optimizer):
     i_steps = 0
+    u.save_hyperparams(BATCH_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
     while i_steps < M:
         myenv.get_initial_state()
         done = False
         while done is not True:
             action = myenv.eps_greedy(policy_net)
             done = myenv.game_step(action, K)
-            optimize(myenv, policy_net, target_net, optimizer)
+            if i_steps % 4 == 0:
+                optimize(myenv, policy_net, target_net, optimizer)
             i_steps += 1
-        if i_steps >5000:
+        if i_steps >REPLAY_START_SIZE:
             print(i_steps)
         if i_steps % TARGET_UPDATE < 50:  # befagyasztott háló frissítése és logolás
             u.save_log(i_steps, myenv.score)
             target_net.load_state_dict(policy_net.state_dict())
-    u.save_model_params(policy_net)
-    u.save_hyperparams(BATCH_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
+            u.save_model_params(policy_net)
     print("Training completed")
 
 def eval(myenv, policy_net):
@@ -220,7 +229,7 @@ def main():
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
-    optimizer = optim.RMSprop(policy_net.parameters(), lr=0.00025)
+    optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0025, momentum=0.95)
 
     if btrain is True:
         train(myenv, policy_net, target_net, optimizer)

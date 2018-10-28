@@ -37,5 +37,5 @@ def save_hyperparams(batch_size, replay_start_size, eps_start, eps_end, eps_deca
 
 def save_model_params(model):
     path = create_folder()
-    torch.save(model.state_dict(), path)
+    torch.save(model.state_dict(), path+r'\\model.pth')
     return
