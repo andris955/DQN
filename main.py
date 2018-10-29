@@ -25,6 +25,7 @@ game = 'Breakout-v0'
 PATH = "" #Path to NN parameters
 
 BATCH_SIZE = 32
+STATE_SIZE = 4
 REPLAY_START_SIZE = 50000
 EPS_START = 1
 EPS_END = 0.1
@@ -39,6 +40,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 Experience = namedtuple('Experience',
                         ('state', 'next_state', 'action', 'reward', 'done'))
+
 
 class DQN(nn.Module):
 
@@ -61,6 +63,7 @@ class DQN(nn.Module):
         x = F.relu(self.fc1(x))
         return self.fc2(x)
 
+
 class Myenv():
 
     def __init__(self, gym_env, state_size, capacity):
@@ -73,6 +76,8 @@ class Myenv():
         self.i = 0
         self.steps_done = 0
         self.score = 0
+        self.games_done = 0
+        self.avg_score = 0
 
     def preprocess(self, observation):
         screen = resize(rgb2gray(observation), (110, 84))[16:110 - 10, :]
@@ -81,6 +86,10 @@ class Myenv():
 
     def get_initial_state(self):
         self.state_buffer = []
+        if self.games_done % 10 == 0:
+            self.games_done = 0
+        self.games_done += 1
+        self.avg_score = ((self.games_done - 1)/self.games_done) * self.avg_score + (1/self.games_done) * self.score
         self.score = 0
         observation = self.env.reset()
         x_t = self.preprocess(observation)
@@ -89,16 +98,17 @@ class Myenv():
         s_t = self.state_buffer
         return s_t
 
-
     def game_step(self, action, k):
-        start_time = time.time()
         if show_render:
             self.env.render()
 
+        done = False
         for i in range(k):
-            observation, reward, done, info = self.env.step(action)
-            self.score += reward
+            if done is False:
+                observation, reward, done, info = self.env.step(action)
+                self.score += reward
 
+        self.steps_done += 1
         x_t1 = self.preprocess(observation)
 
         if self.i % 4 == 0 and img_show_bool:
@@ -116,9 +126,6 @@ class Myenv():
         if img_show_bool:
             self.i += 1
 
-        if self.steps_done > REPLAY_START_SIZE:
-            print("Game step: %s" % (time.time() - start_time))
-
         return done
 
     def push_experience(self, s_t, s_t1, action, reward, done):
@@ -129,13 +136,11 @@ class Myenv():
             self.exp_buffer.pop(0)
             self.exp_buffer.append(exp)
 
-
     def eps_greedy(self, policy_net):
         if self.steps_done > REPLAY_START_SIZE:
             eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * ((self.steps_done-REPLAY_START_SIZE) / EPS_DECAY))
         else:
             eps_threshold = 1
-        self.steps_done += 1
         rand_num = np.random.random()
         if rand_num < eps_threshold:
             action = np.random.randint(0, self.possible_actions)
@@ -147,32 +152,32 @@ class Myenv():
     def sample(self, batch_size):
         return random.sample(self.exp_buffer, batch_size)
 
+
 def optimize(myenv, policy_net, target_net, optimizer):
 
     if len(myenv.exp_buffer) < REPLAY_START_SIZE:
         return
 
-    start_time = time.time()
     experiences = myenv.sample(BATCH_SIZE)
     batch = Experience(*zip(*experiences))
 
      # Compute a mask of non-final states and concatenate the batch elements
-    non_final_next_states = torch.tensor(np.array([s for s in batch.next_state if s is not None], dtype=np.float32), device=device, dtype=torch.float).to(device)
+    next_state_batch = torch.tensor(np.array(batch.next_state, dtype=np.float32), device=device, dtype=torch.float32).to(device)
     state_batch = torch.tensor(np.array(batch.state, dtype=np.float32), device=device, dtype=torch.float32).to(device)
     action_batch = torch.tensor(batch.action).to(device).unsqueeze(1)
     reward_batch = torch.tensor(batch.reward).to(device)
+    done_batch = torch.tensor(np.multiply(batch.done, 1), dtype=torch.float32).to(device)
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
     state_action_values = policy_net(state_batch).gather(1, action_batch)
 
-    # Compute V(s_{t+1}) for all next states.
-    next_state = target_net(non_final_next_states).max(1)
-    next_state_values = next_state[0].detach()
-    next_state_indexes = next_state[1].detach()
+    # Compute Q(s_{t+1},a') for all next states.
+    next_state_action_values = target_net(next_state_batch).max(1)
+    next_state_values = next_state_action_values[0].detach()
 
     # Compute the expected Q values
-    expected_state_action_values = (next_state_values * GAMMA) + reward_batch
+    expected_state_action_values = (next_state_values * done_batch * GAMMA) + reward_batch
     expected_state_action_values = expected_state_action_values.unsqueeze(1)
 
     # Compute Huber loss
@@ -184,12 +189,10 @@ def optimize(myenv, policy_net, target_net, optimizer):
     for param in policy_net.parameters():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
-    print("Optimalization: %s" % (time.time() - start_time))
 
 
 def train(myenv, policy_net, target_net, optimizer):
     i_steps = 0
-    u.save_hyperparams(BATCH_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
     while i_steps < M:
         myenv.get_initial_state()
         done = False
@@ -199,13 +202,12 @@ def train(myenv, policy_net, target_net, optimizer):
             if i_steps % 4 == 0:
                 optimize(myenv, policy_net, target_net, optimizer)
             i_steps += 1
-        if i_steps >REPLAY_START_SIZE:
-            print(i_steps)
-        if i_steps % TARGET_UPDATE < 50:  # befagyasztott háló frissítése és logolás
-            u.save_log(i_steps, myenv.score)
-            target_net.load_state_dict(policy_net.state_dict())
-            u.save_model_params(policy_net)
+            if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
+                u.save_log(i_steps, myenv.avg_score)
+                target_net.load_state_dict(policy_net.state_dict())
+                u.save_model_params(policy_net)
     print("Training completed")
+
 
 def eval(myenv, policy_net):
     myenv.get_initial_state()
@@ -214,15 +216,14 @@ def eval(myenv, policy_net):
     while done is not True:
         with torch.no_grad():
             action = policy_net(torch.from_numpy(np.array([myenv.state_buffer], dtype=np.float32))).max(1)[1].view(1, 1)
-        print(action)
+        #print(action)
         done = myenv.game_step(action, K)
     print(myenv.score)
 
 
 def main():
     env = gym.make(game).unwrapped
-    num_actions = env.action_space.n
-    myenv = Myenv(env, num_actions, CAPACITY)
+    myenv = Myenv(env, STATE_SIZE, CAPACITY)
 
     policy_net = DQN(myenv.possible_actions).to(device)
     target_net = DQN(myenv.possible_actions).to(device)
@@ -230,7 +231,7 @@ def main():
     target_net.eval()
 
     optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0025, momentum=0.95)
-
+    u.save_hyperparams(BATCH_SIZE, STATE_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
     if btrain is True:
         train(myenv, policy_net, target_net, optimizer)
     else:
