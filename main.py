@@ -186,8 +186,8 @@ def optimize(myenv, policy_net, target_net, optimizer):
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
-    for param in policy_net.parameters():
-        param.grad.data.clamp_(-1, 1)
+    #for param in policy_net.parameters():
+    #    param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
 
@@ -205,6 +205,7 @@ def train(myenv, policy_net, target_net, optimizer):
             if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
                 u.save_log(i_steps, myenv.avg_score)
                 target_net.load_state_dict(policy_net.state_dict())
+            if i_steps % (5*TARGET_UPDATE) == 0:
                 u.save_model_params(policy_net)
     print("Training completed")
 
