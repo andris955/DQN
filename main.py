@@ -34,7 +34,7 @@ M = 1000000
 TARGET_UPDATE = 10000
 GAMMA = 0.99
 CAPACITY = 1000000
-K = 4
+K = 1
 NO_REP_ACTION = 30
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -227,8 +227,7 @@ def train(myenv, policy_net, target_net, optimizer):
             if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
                 u.save_log(i_steps, myenv.avg_score)
                 target_net.load_state_dict(policy_net.state_dict())
-            if i_steps % (5*TARGET_UPDATE) == 0:
-                u.save_model_params(policy_net)
+    u.save_model_params(policy_net)
     print("Training completed")
 
 
