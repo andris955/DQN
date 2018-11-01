@@ -35,6 +35,7 @@ TARGET_UPDATE = 10000
 GAMMA = 0.99
 CAPACITY = 1000000
 K = 4
+NO_REP_ACTION = 30
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -78,6 +79,8 @@ class Myenv():
         self.score = 0
         self.games_done = 0
         self.avg_score = 0
+        self.last_actions = []
+        self.done = False
 
     def preprocess(self, observation):
         screen = resize(rgb2gray(observation), (110, 84))[16:110 - 10, :]
@@ -85,8 +88,9 @@ class Myenv():
         return screen
 
     def get_initial_state(self):
+        self.done = False
         self.state_buffer = []
-        if self.games_done % 10 == 0:
+        if self.games_done % 100 == 0:
             self.games_done = 0
         self.games_done += 1
         self.avg_score = ((self.games_done - 1)/self.games_done) * self.avg_score + (1/self.games_done) * self.score
@@ -102,11 +106,11 @@ class Myenv():
         if show_render:
             self.env.render()
 
-        done = False
         for i in range(k):
-            if done is False:
+            if self.done is False:
                 observation, reward, done, info = self.env.step(action)
                 self.score += reward
+                self.done = done
 
         self.steps_done += 1
         x_t1 = self.preprocess(observation)
@@ -126,7 +130,7 @@ class Myenv():
         if img_show_bool:
             self.i += 1
 
-        return done
+        return self.done
 
     def push_experience(self, s_t, s_t1, action, reward, done):
         exp = [s_t, s_t1, action, reward, done]
@@ -147,6 +151,24 @@ class Myenv():
         else:
              with torch.no_grad():
                 action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32)).to(device)).max(1)[1].view(1, 1)
+                
+        if len(self.last_actions) < NO_REP_ACTION:
+            self.last_actions.append(action)
+        else:
+            self.last_actions.pop(0)
+            self.last_actions.append(action)
+        
+        no_rep = False
+        if len(self.last_actions) < NO_REP_ACTION:
+            no_rep = True
+            for j in range(len(self.last_actions)-1):
+                if self.last_actions[j] != self.last_actions[j+1]:
+                    no_rep = False
+        
+        if no_rep is True:
+            while action == self.last_actions[0]:
+                action = np.random.randint(0, self.possible_actions)
+                 
         return action
 
     def sample(self, batch_size):
