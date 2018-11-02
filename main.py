@@ -30,12 +30,13 @@ REPLAY_START_SIZE = 50000
 EPS_START = 1
 EPS_END = 0.1
 EPS_DECAY = 200000
-M = 1000000
+M = 1500000
 TARGET_UPDATE = 10000
 GAMMA = 0.99
 CAPACITY = 1000000
 K = 1
 NO_REP_ACTION = 30
+LAST_GAME = 10
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -90,7 +91,7 @@ class Myenv():
     def get_initial_state(self):
         self.done = False
         self.state_buffer = []
-        if self.games_done % 100 == 0:
+        if self.games_done % LAST_GAME == 0:
             self.games_done = 0
         self.games_done += 1
         self.avg_score = ((self.games_done - 1)/self.games_done) * self.avg_score + (1/self.games_done) * self.score
@@ -149,8 +150,8 @@ class Myenv():
         if rand_num < eps_threshold:
             action = np.random.randint(0, self.possible_actions)
         else:
-             with torch.no_grad():
-                action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32)).to(device)).max(1)[1].view(1, 1)
+             #with torch.no_grad():
+            action = policy_net(torch.from_numpy(np.array([self.state_buffer], dtype=np.float32)).to(device)).max(1)[1].view(1, 1)
                 
         if len(self.last_actions) < NO_REP_ACTION:
             self.last_actions.append(action)
@@ -178,7 +179,7 @@ class Myenv():
 def optimize(myenv, policy_net, target_net, optimizer):
 
     if len(myenv.exp_buffer) < REPLAY_START_SIZE:
-        return
+        return 0,0
 
     experiences = myenv.sample(BATCH_SIZE)
     batch = Experience(*zip(*experiences))
@@ -188,13 +189,16 @@ def optimize(myenv, policy_net, target_net, optimizer):
     state_batch = torch.tensor(np.array(batch.state, dtype=np.float32), device=device, dtype=torch.float32).to(device)
     action_batch = torch.tensor(batch.action).to(device).unsqueeze(1)
     reward_batch = torch.tensor(batch.reward).to(device)
-    done_batch = torch.tensor(np.multiply(batch.done, 1), dtype=torch.float32).to(device)
+    done_list = [not i for i in batch.done]
+    done_batch = torch.tensor(np.multiply(done_list, 1), dtype=torch.float32).to(device)
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
     state_action_values = policy_net(state_batch).gather(1, action_batch)
+    avg_qscore = torch.sum(state_action_values) / BATCH_SIZE
 
-    # Compute Q(s_{t+1},a') for all next states.
+
+    # Compute max Q(s_{t+1},a') for all next states.
     next_state_action_values = target_net(next_state_batch).max(1)
     next_state_values = next_state_action_values[0].detach()
 
@@ -208,13 +212,16 @@ def optimize(myenv, policy_net, target_net, optimizer):
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
-    #for param in policy_net.parameters():
-    #    param.grad.data.clamp_(-1, 1)
+    for param in policy_net.parameters():
+        param.grad.data.clamp_(-1, 1)
     optimizer.step()
+
+    return loss.item(), avg_qscore.item()
 
 
 def train(myenv, policy_net, target_net, optimizer):
     i_steps = 0
+    running_loss = 0
     while i_steps < M:
         myenv.get_initial_state()
         done = False
@@ -222,11 +229,18 @@ def train(myenv, policy_net, target_net, optimizer):
             action = myenv.eps_greedy(policy_net)
             done = myenv.game_step(action, K)
             if i_steps % 4 == 0:
-                optimize(myenv, policy_net, target_net, optimizer)
+                loss, avg_qscore = optimize(myenv, policy_net, target_net, optimizer)
+                if loss is not None:
+                    running_loss += loss
+            if i_steps % 500 == 0:
+                running_loss = running_loss / 500
             i_steps += 1
             if i_steps % TARGET_UPDATE == 0:  # befagyasztott háló frissítése és logolás
-                u.save_log(i_steps, myenv.avg_score)
+                u.save_log(i_steps, myenv.avg_score, running_loss, avg_qscore)
                 target_net.load_state_dict(policy_net.state_dict())
+            if i_steps % 500 == 0:
+                running_loss = 0
+
     u.save_model_params(policy_net)
     print("Training completed")
 
@@ -253,7 +267,7 @@ def main():
     target_net.eval()
 
     optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0025, momentum=0.95)
-    u.save_hyperparams(BATCH_SIZE, STATE_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K)
+    u.save_hyperparams(BATCH_SIZE, STATE_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, EPS_DECAY, M, TARGET_UPDATE, GAMMA, CAPACITY, K, NO_REP_ACTION, LAST_GAME)
     if btrain is True:
         train(myenv, policy_net, target_net, optimizer)
     else:
