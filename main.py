@@ -47,11 +47,11 @@ class DQN(nn.Module):
 
     def __init__(self, num_actions):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(4, 32, 8, stride=4)
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4)
         # (84 - (8 - 1) - 1) / 4 + 1 = 20 Output: 32 * 20 * 20
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
         # (20 - (4 -1) -1) / 2 + 1 = 9 Output: 64 * 9 * 9
-        self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
         # (9 - (3-1) -1)/1 + 1 = 7 Output: 64 * 7 * 7 =  3136
         self.fc1 = nn.Linear(3136, 512)
         self.fc2 = nn.Linear(512, num_actions)
@@ -81,9 +81,9 @@ class Myenv:
         self.last_actions = []
         self.eps_threshold = 1
         self.done = False
-        self.policy_net = DQN(self.possible_actions).double().to(device)
-        self.target_net = DQN(self.possible_actions).double().to(device)
-        self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM)
+        self.policy_net = DQN(self.possible_actions).to(device)
+        self.target_net = DQN(self.possible_actions).to(device)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=LEARNING_RATE)
 
     @staticmethod
     def preprocess(observation):
@@ -142,7 +142,7 @@ class Myenv:
     def eps_greedy(self, policy_net):
         # start_time = time.time()
         if self.steps_done < REPLAY_START_SIZE:
-            action = torch.tensor([[random.randrange(self.possible_actions)]], device=device, dtype=torch.int64)
+            action = torch.tensor([[random.randrange(self.possible_actions)]], device=device, dtype=torch.int32)
             return action
 
         if self.eps_threshold > EPS_END:
@@ -152,10 +152,10 @@ class Myenv:
 
         rand_num = np.random.random()
         if rand_num < self.eps_threshold:
-            action = torch.tensor([[random.randrange(self.possible_actions)]], device=device, dtype=torch.int64)
+            action = torch.tensor([[random.randrange(self.possible_actions)]], device=device, dtype=torch.int32)
         else:
             with torch.no_grad():
-                action = policy_net(torch.from_numpy(np.array([self.state_buffer[1:self.state_size]], dtype=np.float64)).to(device)).max(1)[1]
+                action = policy_net(torch.from_numpy(np.array([self.state_buffer[1:self.state_size]], dtype=np.float32)).to(device)).max(1)[1]
 
         #    print("Eps greedy: %s" %(time.time()-start_time))
         return action
@@ -174,12 +174,14 @@ def optimize(myenv):
     batch = Experience(*zip(*experiences))
 
      # Compute a mask of non-final states and concatenate the batch elements
-    next_state_batch = torch.tensor(np.array(batch.next_state, dtype=np.float64), device=device, dtype=torch.float64).to(device) #requires grad false
-    state_batch = torch.tensor(np.array(batch.state, dtype=np.float64), device=device, dtype=torch.float64).to(device) #requires grad false
+    next_state_batch = torch.tensor(np.array(batch.next_state, dtype=np.float32), device=device, dtype=torch.float32).to(device) #requires grad false
+    next_state_batch = next_state_batch / 255.
+    state_batch = torch.tensor(np.array(batch.state, dtype=np.float32), device=device, dtype=torch.float32).to(device) #requires grad false
+    state_batch = state_batch / 255.
     action_batch = torch.tensor(batch.action).to(device).unsqueeze(1) #requires grad false
-    reward_batch = torch.tensor(batch.reward, dtype=torch.float64).to(device) #requires grad false
+    reward_batch = torch.tensor(batch.reward, dtype=torch.float32).to(device) #requires grad false
     done_list = [not i for i in batch.done]
-    done_batch = torch.tensor(np.multiply(done_list, 1), dtype=torch.float64).to(device) #requires grad false
+    done_batch = torch.tensor(np.multiply(done_list, 1), dtype=torch.float32).to(device) #requires grad false
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken
@@ -215,19 +217,21 @@ def train(myenv):
         while done is not True:
             action = myenv.eps_greedy(myenv.policy_net)
             done = myenv.game_step(action)
-            loss, avg_qscore = optimize(myenv)
+            if myenv.steps_done % 4 == 0:
+                loss, avg_qscore = optimize(myenv)
             running_loss += loss
-            if myenv.steps_done % 250 == 0:
+            if myenv.steps_done % 500 == 0:
                 running_loss = running_loss / 250
             if myenv.steps_done % TARGET_UPDATE == 0:
                 u.save_log(myenv.steps_done, myenv.avg_score, running_loss, avg_qscore)
                 myenv.target_net.load_state_dict(myenv.policy_net.state_dict())
-            if myenv.steps_done % 250 == 0:
+            if myenv.steps_done % 500 == 0:
                 running_loss = 0
             if myenv.steps_done % 5000 == 0:
                 print(u.datetime.now())
                 print([myenv.steps_done, myenv.score])
-
+            if myenv.steps_done % 500000 == 0:
+                u.save_model_params(myenv.policy_net)
     u.save_model_params(myenv.policy_net)
     print("Training completed")
 
@@ -235,13 +239,16 @@ def train(myenv):
 def eval_dqn(myenv):
     myenv.get_initial_state()
     done = False
+    scores = []
     myenv.policy_net.load_state_dict(torch.load(PATH))
-    while done is not True:
-        with torch.no_grad():
-            action = myenv.policy_net(torch.from_numpy(np.array([myenv.state_buffer[1:myenv.state_size]], dtype=np.float64))).max(1)[1]
-        print(action)
-        done = myenv.game_step(action)
-    print(myenv.score)
+    for i in range(10):
+        while done is not True:
+            with torch.no_grad():
+                action = myenv.policy_net(torch.from_numpy(np.array([myenv.state_buffer[1:myenv.state_size]], dtype=np.float32))).max(1)[1]
+            #print(action)
+            done = myenv.game_step(action)
+            scores.append(myenv.score)
+    print(scores)
 
 
 def main():
@@ -253,7 +260,7 @@ def main():
     myenv.policy_net.eval()
 
     u.save_hyperparams(BATCH_SIZE, STATE_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, M, TARGET_UPDATE,
-                       GAMMA, EXP_BUFF_CAPACITY, K, NO_REP_ACTION, LAST_GAME)
+                       GAMMA, EXP_BUFF_CAPACITY, LEARNING_RATE, NO_REP_ACTION, LAST_GAME)
     if btrain is True:
         train(myenv)
     else:
