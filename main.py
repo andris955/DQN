@@ -36,6 +36,7 @@ NO_REP_ACTION = 30
 LAST_GAME = 5
 LEARNING_RATE = 0.00025
 MOMENTUM = 0.95
+MAX_CON_ACTION = 15
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -141,24 +142,44 @@ class Myenv:
 
     def eps_greedy(self, policy_net):
         # start_time = time.time()
-        if self.steps_done < REPLAY_START_SIZE:
-            action = torch.tensor([random.randrange(self.possible_actions)], device=device, dtype=torch.int32)
-            return action
+        random_action = True
+        if btrain is True:
+            if self.steps_done < REPLAY_START_SIZE:
+                action = torch.tensor([random.randrange(self.possible_actions)], device=device, dtype=torch.int32)
+                random_action = True
+                return action, random_action
 
-        if self.eps_threshold > EPS_END:
-            self.eps_threshold = EPS_END - (EPS_START - EPS_END) * (self.steps_done-(REPLAY_START_SIZE + EXP_BUFF_CAPACITY))/EXP_BUFF_CAPACITY
+        if btrain is True:
+            if self.eps_threshold > EPS_END:
+                self.eps_threshold = EPS_END - (EPS_START - EPS_END) * (self.steps_done-(REPLAY_START_SIZE + EXP_BUFF_CAPACITY))/EXP_BUFF_CAPACITY
+            else:
+                self.eps_threshold = EPS_END
         else:
-            self.eps_threshold = EPS_END
+            self.eps_threshold = EPS_END/2
 
         rand_num = np.random.random()
         if rand_num < self.eps_threshold:
             action = torch.tensor([random.randrange(self.possible_actions)], device=device, dtype=torch.int32)
+            random_action = True
         else:
             with torch.no_grad():
                 action = policy_net(torch.from_numpy(np.array([self.state_buffer[1:self.state_size]], dtype=np.float32)).to(device)).max(1)[1]
+                random_action = False
+
+        same = False
+        if len(self.last_actions) > MAX_CON_ACTION:
+            self.last_actions.pop(0)
+            self.last_actions.append(action.item())
+            same = (len(self.last_actions) == self.last_actions.count(self.last_actions[0]))
+        else:
+            self.last_actions.append(action.item())
+
+        if same:
+            action = (self.last_actions[0] + 1) % self.possible_actions
+            action = torch.tensor(action, device=device, dtype=torch.int32)
 
         #    print("Eps greedy: %s" %(time.time()-start_time))
-        return action
+        return action, random_action
 
     def sample(self, batch_size):
         return random.sample(self.exp_buffer, batch_size)
@@ -215,7 +236,7 @@ def train(myenv):
         myenv.get_initial_state()
         done = False
         while done is not True:
-            action = myenv.eps_greedy(myenv.policy_net)
+            action, _ = myenv.eps_greedy(myenv.policy_net)
             done = myenv.game_step(action)
             if myenv.steps_done % 4 == 0:
                 loss, avg_qscore = optimize(myenv)
@@ -238,23 +259,19 @@ def train(myenv):
 
 def eval_dqn(myenv):
     myenv.get_initial_state()
-    done = False
     scores = []
     myenv.policy_net.load_state_dict(torch.load(PATH, map_location=device))
-    for i in range(2):
+    for i in range(5):
         myenv.get_initial_state()
         done = False
         while done is not True:
             if show_render:
                 myenv.env.render()
-            rand_num = random.random()
-            if rand_num < 0.1:
-                action = torch.tensor([random.randrange(4)], device=device, dtype=torch.int32)
-                print("Random: %d" %action)
-            else:
-                with torch.no_grad():
-                    action = myenv.policy_net(torch.from_numpy(np.array([myenv.state_buffer[1:myenv.state_size]], dtype=np.float32))).to(device).max(1)[1]
-                print("Nem random: %d" %action)
+                action, random_action = myenv.eps_greedy(myenv.policy_net)
+                if random_action is True:
+                    print("Random: %d" %action)
+                else:
+                    print("Nem random: %d" %action)
             #print(action)
             done = myenv.game_step(action)
             print(done)
