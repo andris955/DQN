@@ -15,12 +15,12 @@ import torch.nn.functional as F
 
 import utilities as u
 
-btrain = True
-show_render = False
+btrain = False
+show_render = True
 
 game = 'Breakout-v0'
 
-PATH = "" #Path to NN parameters
+PATH = r'c:\Users\Tokaji András\Documents\BME\MSc\Önálló laboratórium 2\Reinforcment_learning\RL_2018_11_15\model.pth' #Path to NN parameters
 
 BATCH_SIZE = 32
 STATE_SIZE = 4
@@ -142,7 +142,7 @@ class Myenv:
     def eps_greedy(self, policy_net):
         # start_time = time.time()
         if self.steps_done < REPLAY_START_SIZE:
-            action = torch.tensor([[random.randrange(self.possible_actions)]], device=device, dtype=torch.int32)
+            action = torch.tensor([random.randrange(self.possible_actions)], device=device, dtype=torch.int32)
             return action
 
         if self.eps_threshold > EPS_END:
@@ -152,7 +152,7 @@ class Myenv:
 
         rand_num = np.random.random()
         if rand_num < self.eps_threshold:
-            action = torch.tensor([[random.randrange(self.possible_actions)]], device=device, dtype=torch.int32)
+            action = torch.tensor([random.randrange(self.possible_actions)], device=device, dtype=torch.int32)
         else:
             with torch.no_grad():
                 action = policy_net(torch.from_numpy(np.array([self.state_buffer[1:self.state_size]], dtype=np.float32)).to(device)).max(1)[1]
@@ -240,14 +240,26 @@ def eval_dqn(myenv):
     myenv.get_initial_state()
     done = False
     scores = []
-    myenv.policy_net.load_state_dict(torch.load(PATH))
-    for i in range(10):
+    myenv.policy_net.load_state_dict(torch.load(PATH, map_location=device))
+    for i in range(2):
+        myenv.get_initial_state()
+        done = False
         while done is not True:
-            with torch.no_grad():
-                action = myenv.policy_net(torch.from_numpy(np.array([myenv.state_buffer[1:myenv.state_size]], dtype=np.float32))).max(1)[1]
+            if show_render:
+                myenv.env.render()
+            rand_num = random.random()
+            if rand_num < 0.1:
+                action = torch.tensor([random.randrange(4)], device=device, dtype=torch.int32)
+                print("Random: %d" %action)
+            else:
+                with torch.no_grad():
+                    action = myenv.policy_net(torch.from_numpy(np.array([myenv.state_buffer[1:myenv.state_size]], dtype=np.float32))).to(device).max(1)[1]
+                print("Nem random: %d" %action)
             #print(action)
             done = myenv.game_step(action)
-            scores.append(myenv.score)
+            print(done)
+        scores.append(myenv.score)
+        print("MOST VOLT DONE!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     print(scores)
 
 

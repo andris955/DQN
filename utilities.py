@@ -32,7 +32,7 @@ def save_hyperparams(batch_size, state_size, replay_start_size, eps_start, eps_e
     with open(path + '\hyperparams_' + date_in_string()[0:10] + '.txt', 'w') as outfile:
         outfile.write('Batch size: ' + str(batch_size) + '\n' + 'State size: ' + str(state_size) + '\n' + 'Replay Start Size: ' + str(replay_start_size) + '\n' + 'Eps start: ' + str(eps_start) + '\n'
                     + 'Eps end: ' + str(eps_end) + '\n' + 'Learning rate: ' + str(learning_rate) + '\n' + 'M: ' + str(m) + '\n' + 'Target update: ' + str(target_update) + '\n'
-                    + 'Gamma: ' + str(gamma) + '\n' + 'Capacity: ' + str(capacity) + '\n' + 'Frame skipping: ' + str(k) + '\n'+ 'No more consecutive action: ' + str(no_rep_action) + '\n'+ 'Last N game avg: ' + str(last_game_avg) + '\n')
+                    + 'Gamma: ' + str(gamma) + '\n' + 'Capacity: ' + str(capacity) + '\n' + 'No more consecutive action: ' + str(no_rep_action) + '\n'+ 'Last N game avg: ' + str(last_game_avg) + '\n')
     return
 
 def save_model_params(model):
