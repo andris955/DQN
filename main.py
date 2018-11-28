@@ -15,24 +15,23 @@ import torch.nn.functional as F
 
 import utilities as u
 
-btrain = False
-show_render = True
+btrain = True
+show_render = False
 
-game = 'Breakout-v0'
+game = 'Breakout-v4'
 
-PATH = r'c:\Users\Tokaji András\Documents\BME\MSc\Önálló laboratórium 2\Reinforcment_learning\RL_2018_11_15\model.pth' #Path to NN parameters
+PATH = r'c:\Users\Tokaji András\Documents\BME\MSc\Önálló laboratórium 2\Reinforcment_learning\RL_2018_11_22\2\model_2018_11_22_1951_legjobb.pth' #Path to NN parameters
 
 BATCH_SIZE = 32
 STATE_SIZE = 4
 REPLAY_START_SIZE = 50000
 EPS_START = 1.
 EPS_END = 0.1
-M = 4000000
-TARGET_UPDATE = 10000
+M = 5000000
+TARGET_UPDATE = 15000
 GAMMA = 0.99
 EXP_BUFF_CAPACITY = 1000000
-K = 1
-NO_REP_ACTION = 30
+K = 4
 LAST_GAME = 5
 LEARNING_RATE = 0.00025
 MOMENTUM = 0.95
@@ -166,6 +165,8 @@ class Myenv:
                 action = policy_net(torch.from_numpy(np.array([self.state_buffer[1:self.state_size]], dtype=np.float32)).to(device)).max(1)[1]
                 random_action = False
 
+        return action, random_action
+    """
         same = False
         if len(self.last_actions) > MAX_CON_ACTION:
             self.last_actions.pop(0)
@@ -177,10 +178,8 @@ class Myenv:
         if same:
             action = (self.last_actions[0] + 1) % self.possible_actions
             action = torch.tensor(action, device=device, dtype=torch.int32)
-
-        #    print("Eps greedy: %s" %(time.time()-start_time))
-        return action, random_action
-
+    """
+        
     def sample(self, batch_size):
         return random.sample(self.exp_buffer, batch_size)
 
@@ -196,9 +195,9 @@ def optimize(myenv):
 
      # Compute a mask of non-final states and concatenate the batch elements
     next_state_batch = torch.tensor(np.array(batch.next_state, dtype=np.float32), device=device, dtype=torch.float32).to(device) #requires grad false
-    next_state_batch = next_state_batch / 255.
+    #next_state_batch = next_state_batch / 255.
     state_batch = torch.tensor(np.array(batch.state, dtype=np.float32), device=device, dtype=torch.float32).to(device) #requires grad false
-    state_batch = state_batch / 255.
+    #state_batch = state_batch / 255.
     action_batch = torch.tensor(batch.action).to(device).unsqueeze(1) #requires grad false
     reward_batch = torch.tensor(batch.reward, dtype=torch.float32).to(device) #requires grad false
     done_list = [not i for i in batch.done]
@@ -224,7 +223,7 @@ def optimize(myenv):
     myenv.optimizer.zero_grad()
     loss.backward()
     for param in myenv.policy_net.parameters():
-        param.grad.data.clamp_(-1, 1) #32*4*8*8
+        param.grad.data.clamp_(-2, 2) #32*4*8*8
     myenv.optimizer.step()
     #print("Optimize: %s" %(time.time()-start_time))
     return loss.item(), avg_qscore.item()
@@ -232,13 +231,14 @@ def optimize(myenv):
 
 def train(myenv):
     running_loss = 0
+    loss = 0
     while myenv.steps_done < M:
         myenv.get_initial_state()
         done = False
         while done is not True:
             action, _ = myenv.eps_greedy(myenv.policy_net)
             done = myenv.game_step(action)
-            if myenv.steps_done % 4 == 0:
+            if myenv.steps_done % K:
                 loss, avg_qscore = optimize(myenv)
             running_loss += loss
             if myenv.steps_done % 500 == 0:
@@ -261,7 +261,7 @@ def eval_dqn(myenv):
     myenv.get_initial_state()
     scores = []
     myenv.policy_net.load_state_dict(torch.load(PATH, map_location=device))
-    for i in range(5):
+    for i in range(2):
         myenv.get_initial_state()
         done = False
         while done is not True:
@@ -289,7 +289,7 @@ def main():
     myenv.policy_net.eval()
 
     u.save_hyperparams(BATCH_SIZE, STATE_SIZE, REPLAY_START_SIZE, EPS_START, EPS_END, M, TARGET_UPDATE,
-                       GAMMA, EXP_BUFF_CAPACITY, LEARNING_RATE, NO_REP_ACTION, LAST_GAME)
+                       GAMMA, EXP_BUFF_CAPACITY, LEARNING_RATE, MAX_CON_ACTION, LAST_GAME)
     if btrain is True:
         train(myenv)
     else:
