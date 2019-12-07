@@ -20,7 +20,7 @@ show_render = False
 
 game = 'Breakout-v4'
 
-PATH = r'c:\Users\Tokaji András\Documents\BME\MSc\Önálló laboratórium 2\Reinforcment_learning\RL_2018_11_22\2\model_2018_11_22_1951_legjobb.pth' #Path to NN parameters
+PATH = "" #Path to NN parameters
 
 BATCH_SIZE = 32
 STATE_SIZE = 4
